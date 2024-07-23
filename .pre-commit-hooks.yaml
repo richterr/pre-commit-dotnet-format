@@ -1,0 +1,6 @@
+- id: dotnet-format
+  description: Format a .NET file
+  name: Format .NET
+  language: script
+  types_or: [c#, vb]
+  entry: scripts/dotnet-format.sh
