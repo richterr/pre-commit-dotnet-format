@@ -3,4 +3,4 @@
   name: Format .NET
   language: script
   types_or: [c#, vb]
-  entry: scripts/dotnet-format.sh
+  entry: src/dotnet-format.sh
