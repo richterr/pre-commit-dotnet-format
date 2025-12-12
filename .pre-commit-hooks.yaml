@@ -2,5 +2,5 @@
   description: Format a .NET file
   name: Format .NET
   language: script
-  types_or: [c#, vb]
+  types_or: [c#]
   entry: src/dotnet-format.sh
