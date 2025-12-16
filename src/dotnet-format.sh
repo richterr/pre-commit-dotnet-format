@@ -55,24 +55,41 @@ restore_project(){
     project_dir="$(dirname "$project_file")"
 
     local lock_file="$project_dir/packages.lock.json"
-    local restore_lock_file="$project_dir/obj/.dotnet-restore.lock"
+    local restore_lock_dir="$project_dir/obj/.dotnet-restore.lock"
 
     mkdir -p "$project_dir/obj"
 
-    # prevent concurrent restores of the same project
-    local lock_fd=200
-    eval "exec $lock_fd>$restore_lock_file"
+    # Acquire lock using mkdir (atomic operation, cross-platform)
+    local lock_acquired=0
+    local lock_wait_attempts=0
+    local max_lock_wait=30
 
-    if ! flock -n $lock_fd; then
-        echo "Waiting for concurrent restore to complete..." >&2
-        flock $lock_fd
+    while [ $lock_wait_attempts -lt $max_lock_wait ]; do
+        if mkdir "$restore_lock_dir" 2>/dev/null; then
+            lock_acquired=1
+            break
+        fi
 
-        # verify restore success
+        # Lock exists, check if restore already completed
         if [ -f "$project_dir/obj/project.assets.json" ]; then
-            eval "exec $lock_fd>&-"
             return 0
         fi
+
+        echo "Waiting for concurrent restore to complete..." >&2
+        sleep 1
+        lock_wait_attempts=$((lock_wait_attempts + 1))
+    done
+
+    if [ $lock_acquired -eq 0 ]; then
+        echo "Failed to acquire restore lock after ${max_lock_wait}s" >&2
+        return 11
     fi
+
+    # Ensure lock is released on exit
+    # shellcheck disable=SC2064
+    # the local variable restore_lock_dir is expanded at trap definition time
+    # it won't exist when the trap is executed therefore disable SC2064
+    trap "rmdir '$restore_lock_dir' 2>/dev/null || true" EXIT RETURN
 
     local max_attempts=3
     local attempt=1
@@ -82,16 +99,19 @@ restore_project(){
         if [ $attempt -gt 1 ]; then
             rm -rf "$project_dir/obj"
             mkdir -p "$project_dir/obj"
+            mkdir "$restore_lock_dir"
         fi
 
         if [ -f "$lock_file" ]; then
             if "$executable" restore "$project_file" --locked-mode --verbosity quiet 2>&1; then
-                eval "exec $lock_fd>&-"
+                rmdir "$restore_lock_dir" 2>/dev/null || true
+                trap - EXIT RETURN
                 return 0
             fi
         else
             if "$executable" restore "$project_file" --verbosity quiet 2>&1; then
-                eval "exec $lock_fd>&-"
+                rmdir "$restore_lock_dir" 2>/dev/null || true
+                trap - EXIT RETURN
                 return 0
             fi
         fi
@@ -105,7 +125,8 @@ restore_project(){
         attempt=$((attempt + 1))
     done
 
-    eval "exec $lock_fd>&-"
+    rmdir "$restore_lock_dir" 2>/dev/null || true
+    trap - EXIT RETURN
     echo "Failed to restore project $project_file after $max_attempts attempts" >&2
     return 12
 }
