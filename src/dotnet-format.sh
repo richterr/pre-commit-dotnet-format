@@ -55,6 +55,12 @@ restore_project(){
     project_dir="$(dirname "$project_file")"
 
     local lock_file="$project_dir/packages.lock.json"
+    local locked_mode="false"
+
+    if [[ -f "$lock_file" ]]; then
+        locked_mode="true"
+    fi
+
     local restore_lock_dir="$project_dir/obj/.dotnet-restore.lock"
 
     mkdir -p "$project_dir/obj"
@@ -103,7 +109,7 @@ restore_project(){
         fi
 
         if [ -f "$lock_file" ]; then
-            if "$executable" restore "$project_file" --locked-mode --verbosity quiet 2>&1; then
+            if "$executable" restore "$project_file" --locked-mode --no-cache --verbosity quiet 2>&1; then
                 rmdir "$restore_lock_dir" 2>/dev/null || true
                 trap - EXIT RETURN
                 return 0
@@ -127,7 +133,7 @@ restore_project(){
 
     rmdir "$restore_lock_dir" 2>/dev/null || true
     trap - EXIT RETURN
-    echo "Failed to restore project $project_file after $max_attempts attempts" >&2
+    echo "Failed to restore project $project_file after $max_attempts attempts (locked mode: $locked_mode)" >&2
     return 12
 }
 
